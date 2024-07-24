@@ -1,0 +1,64 @@
+package com.example.batch.config;
+
+import com.example.batch.model.Person;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.launch.support.RunIdIncrementer;
+import org.springframework.batch.core.step.tasklet.Tasklet;
+import org.springframework.batch.item.database.JpaPagingItemReader;
+import org.springframework.batch.item.database.builder.JpaPagingItemReaderBuilder;
+import org.springframework.batch.item.file.FlatFileItemWriter;
+import org.springframework.batch.item.file.builder.FlatFileItemWriterBuilder;
+import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
+import org.springframework.batch.item.file.transform.PassThroughFieldExtractor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+
+import javax.persistence.EntityManagerFactory;
+
+@Configuration
+@EnableBatchProcessing
+@EnableJpaRepositories(basePackages = "com.example.batch.repository")
+public class BatchConfig {
+
+    @Bean
+    public JpaPagingItemReader<Person> reader(EntityManagerFactory entityManagerFactory) {
+        return new JpaPagingItemReaderBuilder<Person>()
+                .name("personReader")
+                .entityManagerFactory(entityManagerFactory)
+                .queryString("SELECT p FROM Person p")
+                .pageSize(10)
+                .build();
+    }
+
+    @Bean
+    public FlatFileItemWriter<Person> writer() {
+        return new FlatFileItemWriterBuilder<Person>()
+                .name("personWriter")
+                .resource(new FileSystemResource("output/persons.csv"))
+                .delimited()
+                .delimiter(",")
+                .names(new String[]{"id", "firstName", "lastName"})
+                .build();
+    }
+
+    @Bean
+    public Job exportPersonJob(JobBuilderFactory jobBuilderFactory, StepBuilderFactory stepBuilderFactory, JpaPagingItemReader<Person> reader, FlatFileItemWriter<Person> writer) {
+        Step step = stepBuilderFactory.get("exportPersonStep")
+                .<Person, Person>chunk(10)
+                .reader(reader)
+                .writer(writer)
+                .build();
+
+        return jobBuilderFactory.get("exportPersonJob")
+                .incrementer(new RunIdIncrementer())
+                .flow(step)
+                .end()
+                .build();
+    }
+}
